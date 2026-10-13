@@ -1,0 +1,7 @@
+anthropic
+fastapi
+uvicorn[standard]
+python-dotenv
+numpy
+faster-whisper
+piper-tts

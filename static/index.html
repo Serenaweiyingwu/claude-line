@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Line</title>
+<meta name="mobile-web-app-capable" content="yes"> <!-- home screen icon opens without browser bars -->
+<link rel="icon" sizes="192x192" href="/static/icon-192.png">
+<meta name="theme-color" content="#141413">
+<style>
+  /* Laid out for the Galaxy Folder 2: 320 x 533 CSS px once Chrome is full screen. */
+  :root { --bg: #141413; --text: #f0eee6; --muted: #8f8b82; --accent: #d97757; }
+  html, body { height: 100%; }
+  body { margin: 0; display: flex; flex-direction: column; align-items: center; background: var(--bg); color: var(--text);
+         font: 16px/1.4 ui-sans-serif, system-ui, sans-serif; padding: 12px 16px 0; box-sizing: border-box; overflow: hidden; }
+  #hook { width: 190px; height: 190px; flex: none; padding: 0; border: 0; border-radius: 50%; background: none;
+          cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+  #burst { width: 100%; height: 100%; display: block; }
+  #burst line { stroke: var(--accent); stroke-width: 7; stroke-linecap: round; }
+  body.onhook #burst line { stroke: #7d5a4b; }
+  #state { font-size: 20px; font-weight: 600; height: 28px; }
+  #hint { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+  #transcript { flex: 1; align-self: stretch; overflow-y: auto; font-size: 15px; }
+  #transcript p { margin: 0 0 8px; }
+  #transcript .you { color: var(--muted); }
+  #keys { align-self: stretch; flex: none; display: flex; justify-content: space-between; padding: 8px 0 10px;
+          border-top: 1px solid #2c2b28; font-size: 13px; color: var(--muted); }
+  #keys a { color: var(--text); text-decoration: none; }
+  kbd { font: inherit; color: var(--accent); border: 1px solid #4a3a32; border-radius: 4px; padding: 0 5px; margin-right: 4px; }
+</style>
+</head>
+<body class="onhook">
+<button id="hook" autofocus aria-label="Pick up or hang up"><svg id="burst" viewBox="-100 -100 200 200"></svg></button>
+<div id="state">On hook</div>
+<div id="hint"></div>
+<div id="transcript"></div>
+<div id="keys">
+  <span><kbd>OK</kbd><span id="hookLabel">Pick up</span></span>
+  <a id="terminal" href="http://localhost:8701"><kbd>2</kbd>Claude Code</a>
+</div>
+
+<script>
+const hook = document.getElementById("hook");
+const stateLine = document.getElementById("state");
+const hint = document.getElementById("hint");
+const transcript = document.getElementById("transcript");
+
+const STATES = { onhook: "On hook", connecting: "Connecting", listening: "Listening", thinking: "Thinking", speaking: "Claude is speaking" };
+let state = "onhook";
+function setState(next) {
+  state = next;
+  document.body.className = next;
+  stateLine.textContent = STATES[next];
+  hint.textContent = "";
+}
+
+let ws, ctx, mic, meter;
+let outRate = 22050;
+let playHead = 0;      // when the queued audio finishes, in ctx time
+let playing = 0;       // audio chunks not yet finished
+let turnEnded = false; // server has sent everything for this turn
+let claudeLine = null;
+let micLevel = 0;      // loudness of the latest mic chunk, 0 to 1
+
+function addLine(who, text) {
+  const p = document.createElement("p");
+  p.className = who;
+  p.textContent = text;
+  transcript.append(p);
+  p.scrollIntoView({ block: "end" });
+  return p;
+}
+
+function play(pcm) {
+  const samples = new Int16Array(pcm);
+  const buffer = ctx.createBuffer(1, samples.length, outRate);
+  const out = buffer.getChannelData(0);
+  for (let i = 0; i < samples.length; i++) out[i] = samples[i] / 32768;
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(meter);
+  playHead = Math.max(playHead, ctx.currentTime);
+  source.start(playHead);
+  playHead += buffer.duration;
+  playing++;
+  source.onended = () => { playing--; finishTurn(); };
+  setState("speaking");
+}
+
+// The server only listens again once Claude's voice has finished playing here,
+// so the mic never picks up Claude talking.
+function finishTurn() {
+  if (!turnEnded || playing > 0 || ws?.readyState !== WebSocket.OPEN) return;
+  turnEnded = false;
+  ws.send(JSON.stringify({ type: "playback_done" }));
+}
+
+function onMessage(event) {
+  if (typeof event.data !== "string") return play(event.data);
+  const message = JSON.parse(event.data);
+  if (message.type === "hello") outRate = message.sample_rate;
+  else if (message.type === "state") setState(message.state);
+  else if (message.type === "you") { addLine("you", message.text); claudeLine = null; }
+  else if (message.type === "claude") { addLine("claude", message.text); claudeLine = null; }
+  else if (message.type === "claude_delta") {
+    claudeLine ??= addLine("claude", "");
+    claudeLine.textContent += message.text;
+    claudeLine.scrollIntoView({ block: "end" });
+  } else if (message.type === "claude_break") claudeLine = null; // the next words start a new line
+  else if (message.type === "turn_end") { turnEnded = true; finishTurn(); }
+}
+
+async function pickUp() {
+  mic = await navigator.mediaDevices.getUserMedia({
+    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+  });
+  ctx = new AudioContext({ sampleRate: 16000 });
+  await ctx.audioWorklet.addModule("/static/mic-worklet.js");
+  // Chrome keeps audio suspended until a key or tap on a freshly loaded page.
+  if (ctx.state !== "running") throw new Error("press OK to pick up");
+  navigator.wakeLock?.request("screen").catch(() => {}); // a screen timeout would hang up
+  const node = new AudioWorkletNode(ctx, "mic");
+  ctx.createMediaStreamSource(mic).connect(node);
+  meter = ctx.createAnalyser(); // Claude's voice passes through here so the burst can follow it
+  meter.fftSize = 256;
+  meter.connect(ctx.destination);
+
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/call`);
+  ws.binaryType = "arraybuffer";
+  ws.onmessage = onMessage;
+  ws.onclose = hangUp;
+  node.port.onmessage = (event) => {
+    micLevel = Math.min(1, loudness(new Int16Array(event.data), 0) / 2500);
+    if (ws?.readyState === WebSocket.OPEN) ws.send(event.data);
+  };
+
+  document.getElementById("hookLabel").textContent = "Hang up";
+  transcript.replaceChildren(); // each call starts with a clean screen
+  setState("connecting");
+}
+
+function hangUp() {
+  const socket = ws;
+  ws = null;
+  socket?.close();
+  mic?.getTracks().forEach((track) => track.stop());
+  ctx?.close();
+  mic = ctx = meter = null;
+  playHead = playing = micLevel = 0;
+  turnEnded = false;
+  document.getElementById("hookLabel").textContent = "Pick up";
+  setState("onhook");
+}
+
+function toggleHook() {
+  if (ws) return hangUp();
+  pickUp().catch((error) => {
+    hangUp();
+    hint.textContent = `Could not start: ${error.message}`;
+  });
+}
+
+hook.onclick = toggleHook;
+
+// Closing the flip turns the screen off, which hides the page: that hangs up.
+// Opening it again picks up.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden === Boolean(ws)) toggleHook();
+});
+
+// Keypad: OK presses the focused burst; 2 opens Claude Code. The first key or tap also goes
+// full screen, which browsers only allow after one.
+addEventListener("keydown", (event) => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+  if (event.key === "2") location.href = document.getElementById("terminal").href;
+});
+addEventListener("touchend", () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+});
+
+// The burst: twelve rays that breathe on hook, chase each other while thinking,
+// and follow the loudness of whoever is talking.
+const RAYS = [1, 0.72, 0.9, 0.66, 1, 0.78, 0.94, 0.7, 1, 0.74, 0.88, 0.68];
+const burst = document.getElementById("burst");
+const rays = RAYS.map((_, i) => {
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("transform", `rotate(${i * 30})`);
+  line.setAttribute("y1", -14);
+  burst.append(line);
+  return line;
+});
+
+function loudness(samples, centre) {
+  let sum = 0;
+  for (const sample of samples) sum += (sample - centre) ** 2;
+  return Math.sqrt(sum / samples.length);
+}
+
+const voiceSamples = new Uint8Array(256);
+let level = 0;
+function draw(now) {
+  let target = 0;
+  if (state === "listening") target = micLevel;
+  else if (state === "speaking" && meter) {
+    meter.getByteTimeDomainData(voiceSamples);
+    target = Math.min(1, loudness(voiceSamples, 128) / 28);
+  }
+  level += (target - level) * 0.3;
+  rays.forEach((line, i) => {
+    let reach;
+    if (state === "onhook") reach = 0.5 + 0.06 * Math.sin(now / 900 + i);
+    else if (state === "connecting" || state === "thinking") reach = 0.45 + 0.5 * Math.max(0, Math.sin(now / 220 - i * Math.PI / 6));
+    else reach = 0.5 + 0.5 * level * (0.6 + 0.4 * Math.sin(now / 90 + i * 2.1)) + 0.03 * Math.sin(now / 500 + i);
+    line.setAttribute("y2", -14 - 78 * RAYS[i] * reach);
+  });
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

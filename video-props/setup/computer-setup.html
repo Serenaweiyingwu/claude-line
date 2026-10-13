@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Computer setup re-enactment</title>
+<style>
+  /* Two terminal windows replaying the commands that set the phone up, with the output they
+     really printed. render(t) draws the frame at time t, so ../render.py can seek it. R replays. */
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #stage { position: absolute; left: 50%; top: 50%; width: 1080px; height: 1920px; overflow: hidden;
+           background: linear-gradient(160deg, #2b3a55, #1b2233 55%, #3a2a3f); }
+  .window { position: absolute; left: 40px; width: 1000px; border-radius: 16px; overflow: hidden; background: #1e1f24;
+            box-shadow: 0 30px 80px #000a, 0 0 0 1px #ffffff1a; }
+  .window.idle { filter: brightness(.72); }
+  .titlebar { height: 56px; background: #33353c; display: flex; align-items: center; padding-left: 22px;
+              font: 24px -apple-system, "Helvetica Neue", sans-serif; color: #b9bcc4; }
+  .titlebar i { width: 20px; height: 20px; border-radius: 50%; margin-right: 12px; }
+  .titlebar span { flex: 1; text-align: center; margin-right: 118px; }
+  .text { margin: 0; padding: 22px 24px; font: 26px/1.5 "SF Mono", Menlo, monospace; color: #d7dae0;
+          white-space: pre-wrap; word-break: break-all; box-sizing: border-box; }
+  #shell { top: 120px; } #shell .text { height: 880px; }
+  #server { top: 1100px; } #server .text { height: 660px; }
+  .arrow { color: #7bd88f; } .dir { color: #5ad4e6; } .ok { color: #7bd88f; }
+  .cursor { background: #d7dae0; color: #1e1f24; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="window" id="shell"><div class="titlebar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span>claude-line — zsh</span></div><pre class="text"></pre></div>
+  <div class="window" id="server"><div class="titlebar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span>claude-line — uvicorn</span></div><pre class="text"></pre></div>
+</div>
+<script>
+const events = [];
+let T = 600;
+const wait = (ms) => { T += ms; };
+function run(win, command, outputs, done = true) {   // outputs: [delay before the line, text]
+  events.push({ t: T, win, type: command, ms: command.length * 45 });
+  T += command.length * 45 + 350;
+  for (const [delay, text] of outputs) { T += delay; events.push({ t: T, win, print: text }); }
+  if (done) events.push({ t: T + 150, win, prompt: true });
+}
+
+run("shell", "adb devices", [[250, "List of devices attached"], [0, "77c5b872\tdevice"], [0, ""]]);
+wait(1100);
+run("shell", "adb install com.android.chrome_106.0.5249.126.apk", [[500, "Performing Push Install"], [2600, "Success"]]);
+wait(900);
+run("shell", "adb shell dumpsys package com.android.chrome | grep versionName", [[400, "    versionName=106.0.5249.126"]]);
+wait(1100);
+run("server", ".venv/bin/uvicorn server:app --port 8700", [[1700, "INFO:     Started server process [96660]"],
+  [60, "INFO:     Waiting for application startup."], [60, "INFO:     Application startup complete."],
+  [60, "INFO:     Uvicorn running on http://127.0.0.1:8700 (Press CTRL+C to quit)"]], false);
+wait(1000);
+run("shell", "./phone.sh", [[700, "Starting: Intent { act=android.intent.action.VIEW dat=http://localhost:8700/... pkg=com.android.chrome }"]]);
+wait(1500);
+events.push({ t: T, win: "server", print: 'INFO:     127.0.0.1:56376 - "WebSocket /call" [accepted]' });
+events.push({ t: T + 60, win: "server", print: "INFO:     connection open" });
+wait(2500);
+const DURATION = T;
+
+const PROMPT = '<span class="arrow">➜</span>  <span class="dir">claude-line</span> ';
+const escape = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+function render(t) {
+  const past = events.filter((event) => event.t <= t);
+  const active = past.length ? past[past.length - 1].win : "shell";
+  for (const win of ["shell", "server"]) {
+    let html = PROMPT, typing = true;      // typing: the last line is a prompt waiting for input
+    for (const event of past.filter((one) => one.win === win)) {
+      if (event.type) html += escape(event.type.slice(0, Math.ceil((t - event.t) / 45)));
+      else if (event.prompt) { html += PROMPT; typing = true; }
+      else { html += (typing ? "\n" : "") + escape(event.print).replace(/^Success$/, '<span class="ok">Success</span>') + "\n"; typing = false; }
+    }
+    const blink = win === active && Math.floor(t / 530) % 2 === 0;
+    document.querySelector(`#${win} .text`).innerHTML = html + (blink ? '<span class="cursor"> </span>' : "");
+    document.getElementById(win).classList.toggle("idle", win !== active);
+  }
+}
+
+function fit() {
+  document.getElementById("stage").style.transform = `translate(-50%, -50%) scale(${Math.min(innerWidth / 1080, innerHeight / 1920)})`;
+}
+addEventListener("resize", fit);
+fit();
+
+let live = true, began = performance.now();
+function seek(ms) { live = false; render(ms); }      // called by render.py
+function play(now) { if (live) { render(Math.min(now - began, DURATION)); requestAnimationFrame(play); } }
+requestAnimationFrame(play);
+addEventListener("keydown", (event) => { if (event.key.toLowerCase() === "r") began = performance.now(); });
+</script>
+</body>
+</html>

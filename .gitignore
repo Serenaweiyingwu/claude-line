@@ -1,0 +1,10 @@
+.env
+.venv/
+voices/
+__pycache__/
+*.log
+bridge/
+.DS_Store
+video-props/email-mock*
+video-props/label-clip.py
+video-props/ears-brain-voice-labels.mp4

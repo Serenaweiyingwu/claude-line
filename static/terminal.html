@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Claude Line terminal</title>
+<link rel="stylesheet" href="/static/vendor/xterm.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #1a1a1a; overflow: hidden; }
+  #terminal { position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 2px; }
+  #back { position: absolute; top: 4px; right: 4px; z-index: 10; padding: 4px 10px; border-radius: 14px; font: 13px system-ui, sans-serif;
+          color: #f0eee6; background: #d9775799; text-decoration: none; }
+</style>
+</head>
+<body>
+<div id="terminal"></div>
+<a id="back" href="http://localhost:8700">Call</a>
+<script src="/static/vendor/xterm.js"></script>
+<script src="/static/vendor/addon-fit.js"></script>
+<script>
+// ?size=10 changes the text size. The phone screen is 320 px wide, so 13 px gives about 40 columns.
+const size = Number(new URLSearchParams(location.search).get("size")) || 13;
+const term = new Terminal({ fontSize: size, fontFamily: "Menlo, 'Droid Sans Mono', monospace", cursorBlink: true,
+                            theme: { background: "#1a1a1a" } });
+const fit = new FitAddon.FitAddon();
+term.loadAddon(fit);
+term.open(document.getElementById("terminal"));
+
+const encoder = new TextEncoder();
+let ws;
+
+function sendSize() {
+  fit.fit();
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ resize: [term.cols, term.rows] }));
+}
+
+// The connection drops when the flip closes; reconnecting replays what Claude Code wrote meanwhile.
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/pty`);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { term.reset(); sendSize(); };
+  ws.onmessage = (event) => term.write(new Uint8Array(event.data));
+  ws.onclose = () => setTimeout(connect, 2000);
+}
+
+term.onData((keys) => { if (ws?.readyState === WebSocket.OPEN) ws.send(encoder.encode(keys)); });
+addEventListener("resize", sendSize);
+
+// Browsers only allow full screen after a key press or tap, so the first one hides Chrome's bars.
+function fullScreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+}
+addEventListener("keydown", fullScreen, true);
+addEventListener("touchend", fullScreen, true);
+// Back to the voice line: the page we came from if there is one (it may be the Wi-Fi address).
+document.getElementById("back").onclick = (event) => {
+  if (history.length > 1) { event.preventDefault(); history.back(); }
+};
+connect();
+term.focus();
+</script>
+</body>
+</html>

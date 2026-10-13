@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>claude_line.py</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1e1e1e; color: #d4d4d4; overflow: hidden; }
+  body { display: flex; flex-direction: column; font: 13px -apple-system, system-ui, sans-serif; }
+  #tabs { background: #252526; display: flex; height: 36px; flex: none; }
+  #tab { background: #1e1e1e; padding: 0 16px; display: flex; align-items: center; gap: 8px; border-top: 1px solid #0078d4; color: #fff; }
+  #tab i { width: 9px; height: 9px; border-radius: 50%; background: #3572a5; }
+  #crumbs { padding: 4px 20px; color: #a0a0a0; flex: none; }
+  #editor { flex: 1; display: flex; padding-top: 6px; font: var(--size, 19px)/1.6 Menlo, Monaco, monospace; }
+  #gutter { width: 3.2em; text-align: right; padding-right: 1.2em; color: #6e7681; white-space: pre; flex: none; }
+  #code { white-space: pre; margin: 0; font: inherit; }
+  .com { color: #6a9955; } .str { color: #ce9178; } .num { color: #b5cea8; } .kw { color: #569cd6; }
+  .ctl { color: #c586c0; } .fn { color: #dcdcaa; } .var { color: #9cdcfe; }
+  #cursor { display: inline-block; width: 2px; height: 1.15em; background: #aeafad; vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #status { background: #007acc; color: #fff; height: 22px; line-height: 22px; padding: 0 12px; font-size: 12px; flex: none; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div id="tabs"><div id="tab"><i></i>claude_line.py</div></div>
+<div id="crumbs">claude-line › claude_line.py</div>
+<div id="editor"><div id="gutter">1</div><pre id="code"><span id="cursor"></span></pre></div>
+<div id="status"><span>claude-line</span><span id="where">Ln 1, Col 1 &nbsp; Spaces: 4 &nbsp; UTF-8 &nbsp; Python</span></div>
+<script>
+// Any key or click starts the typing; R starts over. ?size=24 changes the text size, ?slow=2 types at half speed, ?done shows the end result.
+const TOKENS = [["# Claude Line: a flip phone that calls Claude", "com"], ["\n\n", ""], ["# EARS: turn my voice into text (Whisper, runs on this Mac)", "com"], ["\n", ""], ["def", "kw"], [" ", ""], ["ears", "fn"], ["(", ""], ["audio", "var"], [")", ""], [":", ""], ["\n    ", ""], ["segments", "var"], [",", ""], [" ", ""], ["_", "var"], [" ", ""], ["=", ""], [" ", ""], ["whisper", "var"], [".", ""], ["transcribe", "fn"], ["(", ""], ["audio", "var"], [")", ""], ["\n    ", ""], ["return", "ctl"], [" ", ""], ["\" \"", "str"], [".", ""], ["join", "fn"], ["(", ""], ["s", "var"], [".", ""], ["text", "var"], [".", ""], ["strip", "fn"], ["(", ""], [")", ""], [" ", ""], ["for", "ctl"], [" ", ""], ["s", "var"], [" ", ""], ["in", "ctl"], [" ", ""], ["segments", "var"], [")", ""], ["\n\n\n", ""], ["# BRAIN: ask Claude what to say", "com"], ["\n", ""], ["async", "kw"], [" ", ""], ["def", "kw"], [" ", ""], ["brain", "fn"], ["(", ""], ["history", "var"], [")", ""], [":", ""], ["\n    ", ""], ["reply", "var"], [" ", ""], ["=", ""], [" ", ""], ["await", "ctl"], [" ", ""], ["claude", "var"], [".", ""], ["messages", "var"], [".", ""], ["create", "fn"], ["(", ""], ["\n        ", ""], ["model", "var"], ["=", ""], ["\"claude-opus-5-5\"", "str"], [",", ""], ["\n        ", ""], ["max_tokens", "var"], ["=", ""], ["1000", "num"], [",", ""], ["\n        ", ""], ["system", "var"], ["=", ""], ["\"You are Claude, talking on a flip phone.\"", "str"], [",", ""], ["\n        ", ""], ["messages", "var"], ["=", ""], ["history", "var"], [",", ""], ["\n    ", ""], [")", ""], ["\n    ", ""], ["return", "ctl"], [" ", ""], ["reply", "var"], [".", ""], ["content", "var"], ["[", ""], ["0", "num"], ["]", ""], [".", ""], ["text", "var"], ["\n\n\n", ""], ["# VOICE: read the answer out loud (Piper, runs on this Mac)", "com"], ["\n", ""], ["def", "kw"], [" ", ""], ["voice_out", "fn"], ["(", ""], ["text", "var"], [")", ""], [":", ""], ["\n    ", ""], ["return", "ctl"], [" ", ""], ["b\"\"", "str"], [".", ""], ["join", "fn"], ["(", ""], ["chunk", "var"], [".", ""], ["audio_int16_bytes", "var"], [" ", ""], ["for", "ctl"], [" ", ""], ["chunk", "var"], [" ", ""], ["in", "ctl"], [" ", ""], ["voice", "var"], [".", ""], ["synthesize", "fn"], ["(", ""], ["text", "var"], [")", ""], [")", ""], ["\n", ""]];
+const params = new URLSearchParams(location.search);
+if (params.get("size")) document.documentElement.style.setProperty("--size", params.get("size") + "px");
+const code = document.getElementById("code"), cursor = document.getElementById("cursor");
+const gutter = document.getElementById("gutter"), where = document.getElementById("where");
+let run = 0;
+
+function put(ch, cls, span) {
+  if (!span) { span = document.createElement("span"); span.className = cls; cursor.before(span); }
+  span.textContent += ch;
+  const text = code.textContent, rows = text.split("\n");
+  gutter.textContent = rows.map((_, i) => i + 1).join("\n");
+  where.firstChild.textContent = `Ln ${rows.length}, Col ${rows.at(-1).length + 1} `;
+  return span;
+}
+const slow = Number(params.get("slow")) || 1;
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms * slow));
+
+async function type(instant) {
+  const mine = ++run;
+  code.replaceChildren(cursor);
+  gutter.textContent = "1";
+  let lineStart = true;
+  for (const [text, cls] of TOKENS) {
+    let span = null;
+    for (const ch of text) {
+      span = put(ch, cls, span);
+      if (instant) continue;
+      const indent = lineStart && ch === " "; // indentation appears at once, as an editor would add it
+      lineStart = ch === "\n" || indent;
+      if (!indent) await sleep(ch === "\n" ? 260 + Math.random() * 300 : 28 + Math.random() * 70);
+      if (mine !== run) return;
+    }
+  }
+}
+
+if (params.has("done")) type(true);
+let started = false;
+function go(event) {
+  if (started && event.key?.toLowerCase() !== "r") return;
+  started = true;
+  type(false);
+}
+if (params.has("go")) setTimeout(() => go({}), 1500); // ?go starts by itself
+addEventListener("keydown", go);
+addEventListener("click", go);
+</script>
+</body>
+</html>

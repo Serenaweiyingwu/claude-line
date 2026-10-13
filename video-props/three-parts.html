@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Claude Line: ears, brain, voice</title>
+<style>
+  /* A 1080x1920 stage, scaled to fit the window. Every motion is a CSS animation with a delay,
+     so the page plays live and render.py can also seek it frame by frame.
+     ?lang=en switches to English. R replays. */
+  :root { --bg: #0d1117; --panel: #151b24; --line: #2a3442; --text: #e8edf3; --muted: #8b98a8;
+          --ear: #4cc9f0; --brain: #e07b53; --voice: #5fd38d; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #stage { position: absolute; left: 50%; top: 50%; width: 1080px; height: 1920px; background: var(--bg);
+           background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+           background-size: 60px 60px; color: var(--text); overflow: hidden;
+           font-family: "PingFang SC", "Hiragino Sans GB", -apple-system, system-ui, sans-serif; }
+  .mono { font-family: "SF Mono", Menlo, monospace; letter-spacing: .04em; }
+  #stage > * { position: absolute; }
+
+  .in { animation: in .7s cubic-bezier(.2, .8, .2, 1) both; animation-delay: var(--d); }
+  @keyframes in { from { opacity: 0; transform: translateY(28px); } }
+
+  #kicker { left: 80px; top: 110px; font-size: 30px; color: var(--muted); }
+  :lang(en) #title { font-size: 68px; }
+  #title { left: 80px; top: 160px; font-size: 76px; font-weight: 700; margin: 0; white-space: nowrap; }
+  #root { left: 80px; top: 320px; height: 96px; padding: 0 40px; border-radius: 48px; display: flex; align-items: center;
+          gap: 20px; font-size: 44px; font-weight: 600; background: var(--panel); border: 2px solid var(--muted); }
+  #root svg { width: 48px; height: 48px; }
+
+  #spine { left: 0; top: 0; width: 1080px; height: 1920px; }
+  #spine path { fill: none; stroke: var(--line); stroke-width: 4; stroke-dasharray: 1400; stroke-dashoffset: 1400;
+                animation: draw 1.6s ease-in-out both; animation-delay: 2s; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .node { left: 126px; width: 28px; height: 28px; border-radius: 50%; background: var(--bg); border: 4px solid var(--c);
+          box-sizing: border-box; animation: pop .5s cubic-bezier(.2, 1.6, .4, 1) both; animation-delay: var(--d); }
+  @keyframes pop { from { opacity: 0; transform: scale(0); } }
+
+  .card { left: 200px; width: 800px; height: 340px; box-sizing: border-box; padding: 30px 40px; border-radius: 28px;
+          background: var(--panel); border: 2px solid var(--line);
+          animation: in .7s cubic-bezier(.2, .8, .2, 1) both, lit .6s ease both, flash 1s ease both;
+          animation-delay: var(--d), var(--lit), var(--flash); }
+  @keyframes lit { to { border-color: var(--c); } }
+  @keyframes flash { 30% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c) 45%, transparent), 0 0 80px color-mix(in srgb, var(--c) 50%, transparent); } }
+  .head { display: flex; align-items: center; gap: 28px; }
+  .icon { width: 92px; height: 92px; border-radius: 24px; flex: none; display: grid; place-items: center;
+          background: color-mix(in srgb, var(--c) 16%, transparent); }
+  .icon svg { width: 56px; height: 56px; stroke: var(--c); fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+  .organ { font-size: 64px; line-height: 92px; font-weight: 700; flex: 1; }
+  .tag { font-size: 34px; font-weight: 600; color: var(--c); padding: 8px 22px; border-radius: 12px;
+         border: 2px solid var(--c); }
+  .detail { animation: in .6s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--lit) + var(--i) * .35s); }
+  .term { margin-top: 18px; font-size: 44px; line-height: 56px; font-weight: 600; color: var(--c); }
+  .does { margin-top: 2px; font-size: 34px; line-height: 46px; color: var(--text); white-space: nowrap; }
+  .where { margin-top: 16px; line-height: 32px; display: flex; gap: 14px; font-size: 26px; color: var(--muted); }
+  .where span { padding: 6px 16px; border-radius: 10px; background: #ffffff0d; }
+
+  .data { left: 200px; height: 52px; display: flex; align-items: center; gap: 16px; font-size: 30px; color: var(--muted); }
+  .data b { font-weight: 600; color: var(--text); padding: 4px 18px; border-radius: 26px; border: 2px dashed var(--line); }
+
+  #pulse { left: 122px; top: 0; width: 36px; height: 36px; border-radius: 50%; background: #fff;
+           box-shadow: 0 0 40px 12px #ffffff80; opacity: 0; animation: travel 3.4s linear both; animation-delay: 15.6s; }
+  @keyframes travel { 0% { transform: translateY(484px); opacity: 0; } 8% { opacity: 1; }
+                      29% { transform: translateY(692px); background: var(--ear); }
+                      58% { transform: translateY(1112px); background: var(--brain); }
+                      88% { transform: translateY(1532px); background: var(--voice); opacity: 1; }
+                      100% { transform: translateY(1744px); opacity: 0; } }
+  #footer { left: 0; width: 1080px; top: 1826px; text-align: center; font-size: 34px; color: var(--muted); }
+  #footer i { font-style: normal; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="kicker" class="mono in" style="--d: .2s" data-zh="CLAUDE LINE · 程序思路" data-en="CLAUDE LINE · HOW IT WORKS"></div>
+  <h1 id="title" class="in" style="--d: .5s" data-zh="一个秘书的三个部分" data-en="A secretary in three parts"></h1>
+  <div id="root" class="in" style="--d: 1.2s">
+    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><circle cx="24" cy="16" r="9"/><path d="M6 44c2-11 9-16 18-16s16 5 18 16"/></svg>
+    <span data-zh="秘书" data-en="Secretary"></span>
+  </div>
+
+  <svg id="spine" viewBox="0 0 1080 1920"><path d="M140 416 V1762"/></svg>
+  <div class="node" style="top: 696px; --c: var(--ear); --d: 2.6s"></div>
+  <div class="node" style="top: 1116px; --c: var(--brain); --d: 3.1s"></div>
+  <div class="node" style="top: 1536px; --c: var(--voice); --d: 3.6s"></div>
+
+  <div class="data in" style="top: 466px; --d: 5s"><span>↓</span><b data-zh="我说的话" data-en="what I say"></b></div>
+  <div class="card" style="top: 540px; --c: var(--ear); --d: 2.6s; --lit: 5s; --flash: 16.2s">
+    <div class="head">
+      <div class="icon"><svg viewBox="0 0 64 64"><path d="M8 26v12M20 16v32M32 22v20M44 10v44M56 26v12"/></svg></div>
+      <div class="organ" data-zh="耳朵" data-en="Ears"></div>
+      <div class="tag mono">ASR</div>
+    </div>
+    <div class="detail term" style="--i: 0" data-zh="语音识别" data-en="Speech recognition"></div>
+    <div class="detail does" style="--i: 1" data-zh="把我说的话转成文字" data-en="Turns what I say into text"></div>
+    <div class="detail where mono" style="--i: 2"><span>Whisper</span><span data-zh="在我的 Mac 上运行" data-en="runs on my Mac"></span></div>
+  </div>
+
+  <div class="data in" style="top: 894px; --d: 8.5s"><span>↓</span><b data-zh="文字" data-en="text"></b></div>
+  <div class="card" style="top: 960px; --c: var(--brain); --d: 3.1s; --lit: 8.5s; --flash: 17.2s">
+    <div class="head">
+      <div class="icon"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="9"/><circle cx="10" cy="14" r="5"/><circle cx="54" cy="14" r="5"/><circle cx="10" cy="50" r="5"/><circle cx="54" cy="50" r="5"/><path d="M14 17l11 9M50 17l-11 9M14 47l11-9M50 47l-11-9"/></svg></div>
+      <div class="organ" data-zh="大脑" data-en="Brain"></div>
+      <div class="tag mono">LLM</div>
+    </div>
+    <div class="detail term" style="--i: 0" data-zh="AI 大模型" data-en="AI model"></div>
+    <div class="detail does" style="--i: 1" data-zh="理解我的需求、生成回答" data-en="Works out what I need, writes a reply"></div>
+    <div class="detail where mono" style="--i: 2"><span>Claude</span><span data-zh="在云端运行" data-en="runs in the cloud"></span></div>
+  </div>
+
+  <div class="data in" style="top: 1314px; --d: 12s"><span>↓</span><b data-zh="回答" data-en="the reply"></b></div>
+  <div class="card" style="top: 1380px; --c: var(--voice); --d: 3.6s; --lit: 12s; --flash: 18.2s">
+    <div class="head">
+      <div class="icon"><svg viewBox="0 0 64 64"><path d="M8 24h10l14-12v40L18 40H8z"/><path d="M42 22c5 5 5 15 0 20M50 14c9 10 9 26 0 36"/></svg></div>
+      <div class="organ" data-zh="嗓子" data-en="Voice"></div>
+      <div class="tag mono">TTS</div>
+    </div>
+    <div class="detail term" style="--i: 0" data-zh="语音合成" data-en="Speech synthesis"></div>
+    <div class="detail does" style="--i: 1" data-zh="把回答念给我听" data-en="Reads the reply out loud"></div>
+    <div class="detail where mono" style="--i: 2"><span>Piper</span><span data-zh="在我的 Mac 上运行" data-en="runs on my Mac"></span></div>
+  </div>
+
+  <div class="data in" style="top: 1734px; --d: 13.4s"><span>↓</span><b data-zh="我听到的声音" data-en="what I hear"></b></div>
+  <div id="pulse"></div>
+  <div id="footer" class="mono in" style="--d: 15.2s">
+    <i style="color: var(--ear)">ASR</i> → <i style="color: var(--brain)">LLM</i> → <i style="color: var(--voice)">TTS</i>
+  </div>
+</div>
+<script>
+const lang = new URLSearchParams(location.search).get("lang") === "en" ? "en" : "zh";
+document.documentElement.lang = lang;
+for (const el of document.querySelectorAll("[data-zh]")) el.textContent = el.dataset[lang];
+
+const stage = document.getElementById("stage");
+function fit() {
+  const scale = Math.min(innerWidth / 1080, innerHeight / 1920);
+  stage.style.transform = `translate(-50%, -50%) scale(${scale})`;
+}
+addEventListener("resize", fit);
+fit();
+
+// render.py calls this to show the frame at a given time
+function seek(ms) {
+  for (const animation of document.getAnimations()) { animation.pause(); animation.currentTime = ms; }
+}
+addEventListener("keydown", (event) => { if (event.key.toLowerCase() === "r") location.reload(); });
+</script>
+</body>
+</html>

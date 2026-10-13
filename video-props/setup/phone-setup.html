@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Phone setup re-enactment</title>
+<style>
+  /* A re-enactment of the Galaxy Folder 2's Settings screens: 480 x 800 phone pixels, scaled up
+     on a 1080 x 1920 stage. render(t) draws the frame at time t from the timeline at the bottom,
+     so the page plays live and ../render.py can seek it. ?lang=en for English. R replays. */
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #stage { position: absolute; left: 50%; top: 50%; width: 1080px; height: 1920px; background: #000; overflow: hidden; }
+  #phone { position: absolute; left: 0; top: 60px; width: 480px; height: 800px; transform: scale(2.25); transform-origin: 0 0;
+           background: #fafafa; overflow: hidden; color: #252525; font: 26px/1.2 Roboto, "PingFang SC", "Helvetica Neue", sans-serif; }
+  #status { position: absolute; left: 0; top: 0; width: 480px; height: 36px; background: #51b0d3; z-index: 5; }
+  #status img { position: absolute; top: 0; height: 36px; }
+  #clock { position: absolute; right: 12px; top: 3px; font-size: 22px; color: #fff; white-space: nowrap; }
+  .screen { position: absolute; left: 0; top: 36px; width: 480px; height: 764px; background: #fafafa; display: none; }
+  .bar { position: absolute; left: 0; top: 0; width: 480px; height: 84px; background: #51b0d3; color: #e4f1f7; z-index: 2;
+         display: flex; align-items: center; box-shadow: 0 2px 4px #0003; }
+  .bar .back { width: 72px; height: 84px; display: grid; place-items: center; }
+  .bar .title { flex: 1; font-size: 26px; }
+  .bar .title.first { padding-left: 24px; }
+  .bar .action { font-size: 21px; color: #fff; padding-right: 18px; }
+  .list { position: absolute; left: 0; top: 84px; width: 480px; }
+  .band { height: 17px; background: #f0f0f0; }
+  .head { height: 44px; background: #f0f0f0; color: #8f8f8f; font-size: 20px; font-weight: 600; padding: 9px 24px 0; box-sizing: border-box; }
+  .setting { height: 73px; display: flex; align-items: center; }
+  .setting img { width: 56px; height: 56px; margin-left: 20px; }
+  .setting span { margin-left: 20px; }
+  .row { position: relative; padding: 17px 24px 18px; }
+  .row + .row::before { content: ""; position: absolute; left: 16px; right: 16px; top: 0; border-top: 1px solid #d9d9d9; }
+  .row .sub { font-size: 19px; line-height: 1.32; color: #8f9294; margin-top: 2px; white-space: pre-line; padding-right: 0; }
+  .row.switched .sub { padding-right: 90px; }
+  .row .sub.value { color: #499ebd; }
+  .row.master { background: #f0f0f0; padding: 24px 24px 24px 72px; }
+  .pressed { background: #dfeef5 !important; }
+  .switch { position: absolute; right: 26px; top: 50%; width: 56px; height: 18px; margin-top: -9px; border-radius: 9px; background: #c8c8c8; }
+  .switch::after { content: ""; position: absolute; left: -2px; top: -9px; width: 34px; height: 34px; border-radius: 50%;
+                   background: #eaeaea; border: 1px solid #b5b5b5; box-sizing: border-box; }
+  .switch.on { background: #badfec; }
+  .switch.on::after { left: 24px; background: #56c0e5; border-color: #3d8ba8; }
+  #toast { position: absolute; left: 30px; right: 30px; bottom: 96px; text-align: center; z-index: 8; display: none; }
+  #toast span { display: inline-block; padding: 12px 22px; border-radius: 26px; background: #3d3d3dee; color: #fff; font-size: 19px; line-height: 1.3; }
+  #dim { position: absolute; left: 0; top: 0; width: 480px; height: 800px; background: #0008; z-index: 6; display: none; }
+  .dialog { position: absolute; left: 20px; width: 440px; bottom: 20px; box-sizing: border-box; padding: 26px 26px 10px; background: #fafafa;
+            border-radius: 3px; z-index: 7; display: none; box-shadow: 0 6px 20px #0006; }
+  .dialog h2 { margin: 0 0 14px; font-size: 25px; font-weight: 500; color: #252525; }
+  .dialog p { margin: 0; font-size: 19px; line-height: 1.35; color: #666; white-space: pre-line; overflow-wrap: anywhere; }
+  .dialog .check { display: flex; align-items: center; margin-top: 18px; font-size: 19px; color: #444; }
+  .box { width: 24px; height: 24px; margin-right: 14px; border: 2px solid #8a8a8a; border-radius: 3px; box-sizing: border-box; flex: none;
+         display: grid; place-items: center; color: transparent; font-size: 19px; line-height: 1; }
+  .box.on { background: #51b0d3; border-color: #51b0d3; color: #fff; }
+  .dialog .buttons { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .dialog .buttons div { padding: 14px 22px; font-size: 21px; font-weight: 500; color: #499ebd; }
+  #touch { position: absolute; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; z-index: 9; display: none;
+           background: #7f7f7f66; border: 2px solid #ffffffcc; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="phone">
+  <div id="status"><img src="status-left.png" style="left: 0"><img src="status-right.png" style="right: 108px"><div id="clock"></div></div>
+  <div class="screen" id="settings"><div class="bar"><div class="title first" data-t="settings"></div><div class="action" data-t="search"></div></div><div class="list"></div></div>
+  <div class="screen" id="about"><div class="bar"></div><div class="list"></div></div>
+  <div class="screen" id="software"><div class="bar"></div><div class="list"></div></div>
+  <div class="screen" id="developer"><div class="bar"></div><div class="list"></div></div>
+  <div id="toast"><span></span></div>
+  <div id="dim"></div>
+  <div class="dialog" id="confirm"><h2 data-t="confirmTitle"></h2><p data-t="confirmBody"></p>
+    <div class="buttons"><div data-t="cancel"></div><div id="confirmOk" data-t="ok"></div></div></div>
+  <div class="dialog" id="rsa"><h2 data-t="rsaTitle"></h2><p data-t="rsaBody"></p>
+    <div class="check"><div class="box" id="always">✓</div><span data-t="always"></span></div>
+    <div class="buttons"><div data-t="cancel"></div><div id="rsaOk" data-t="ok"></div></div></div>
+  <div id="touch"></div>
+</div></div>
+
+<script>
+const lang = new URLSearchParams(location.search).get("lang") === "en" ? "en" : "zh";
+const TEXT = {
+  zh: {
+    clock: "下午 1:27", settings: "设置", search: "搜索", cancel: "取消", ok: "确定",
+    wifi: "WLAN", bluetooth: "蓝牙", airplane: "飞行模式", hotspot: "WLAN 热点和网络共享", data: "流量监控", sim: "SIM 卡管理器",
+    more: "更多连接设置", sound: "声音和振动", notifications: "通知", dnd: "免打扰", display: "显示", advanced: "高级功能",
+    apps: "应用程序", accounts: "帐户", backup: "备份与重置", language: "语言和输入", battery: "电池", storage: "存储",
+    date: "日期和时间", manual: "用户手册", developer: "开发者选项", about: "关于手机",
+    status: "状态", statusSub: "查看 SIM 卡状态、设备 IMEI 和其他信息", legal: "法律信息", deviceName: "设备名称", model: "型号",
+    software: "软件信息", softwareSub: "查看最近安装的 Android 版本、基带版本、内核版本、版本号等", hardware: "硬件版本",
+    batteryInfo: "电池信息", batteryInfoSub: "查看设备的电池状态、剩余电量和其他信息",
+    android: "Android版本", baseband: "基带版本", kernel: "内核版本", build: "版本号", se: "Android 的 SE 状态", knox: "Knox 版本",
+    on: "开", bug: "进行漏洞报告", backupPw: "桌面备份密码", backupPwSub: "全桌面备份当前未受保护", awake: "保持唤醒",
+    awakeSub: "充电时屏幕从不休眠", hci: "蓝牙 HCI 搜索日志", hciSub: "在一个文件中捕获所有蓝牙 HCI 数据包", services: "运行中的服务",
+    servicesSub: "查看和管理当前运行的服务。", debugging: "调试", usb: "USB调试", usbSub: "连接USB时调试模式启动",
+    revoke: "撤销USB调试授权", debugApp: "选择调试应用", debugAppSub: "未设置调试应用程序",
+    steps: (n) => `现在只需再执行 ${n} 步操作即可进入开发者模式。`, enabled: "开发者模式已打开。",
+    confirmTitle: "是否允许 USB 调试？",
+    confirmBody: "USB 调试仅适用于开发工作。该功能可用于在您的计算机和设备之间复制数据、在您的设备上安装应用程序而不发送通知以及读取日志数据。",
+    rsaTitle: "允许 USB 调试吗？", rsaBody: "这台计算机的 RSA 密钥指纹为：\nFC:6D:46:40:62:C8:63:FD:B7:C1:64:41:3C:C4:21:22",
+    always: "始终允许使用这台计算机进行调试",
+  },
+  en: {
+    clock: "1:27 PM", settings: "Settings", search: "SEARCH", cancel: "CANCEL", ok: "OK",
+    wifi: "Wi-Fi", bluetooth: "Bluetooth", airplane: "Airplane mode", hotspot: "Mobile hotspot and tethering", data: "Data usage",
+    sim: "SIM card manager", more: "More connection settings", sound: "Sounds and vibration", notifications: "Notifications",
+    dnd: "Do not disturb", display: "Display", advanced: "Advanced features", apps: "Applications", accounts: "Accounts",
+    backup: "Backup and reset", language: "Language and input", battery: "Battery", storage: "Storage", date: "Date and time",
+    manual: "User manual", developer: "Developer options", about: "About phone",
+    status: "Status", statusSub: "Show the SIM card status, IMEI, and other information.", legal: "Legal information",
+    deviceName: "Device name", model: "Model number", software: "Software info",
+    softwareSub: "View the currently installed Android version, baseband version, kernel version, build number, and more.",
+    hardware: "Hardware version", batteryInfo: "Battery info", batteryInfoSub: "View your device's battery status, remaining power, and other information.",
+    android: "Android version", baseband: "Baseband version", kernel: "Kernel version", build: "Build number",
+    se: "SE for Android status", knox: "Knox version",
+    on: "On", bug: "Take bug report", backupPw: "Desktop backup password", backupPwSub: "Desktop full backups aren't currently protected.",
+    awake: "Stay awake", awakeSub: "Screen will never sleep while charging.", hci: "Bluetooth HCI snoop log",
+    hciSub: "Capture all Bluetooth HCI packets in a file.", services: "Running services",
+    servicesSub: "View and control currently running services.", debugging: "Debugging", usb: "USB debugging",
+    usbSub: "Debug mode when USB is connected",
+    revoke: "Revoke USB debugging authorizations", debugApp: "Select app to be debugged", debugAppSub: "No debug app set",
+    steps: (n) => `You are now ${n} step${n > 1 ? "s" : ""} away from being a developer.`, enabled: "Developer mode has been turned on.",
+    confirmTitle: "Allow USB debugging?",
+    confirmBody: "USB debugging is intended for development purposes only. Use it to copy data between your computer and your device, install apps on your device without notification, and read log data.",
+    rsaTitle: "Allow USB debugging?", rsaBody: "The computer's RSA key fingerprint is:\nFC:6D:46:40:62:C8:63:FD:B7:C1:64:41:3C:C4:21:22",
+    always: "Always allow from this computer",
+  },
+}[lang];
+document.documentElement.lang = lang;
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); e.className = cls || ""; if (text) e.textContent = text; return e; };
+
+// --- the screens, with the phone's real values ---
+const SETTINGS = [["wifi", "bluetooth", "airplane", "hotspot", "data", "sim", "more"],
+                  ["sound", "notifications", "dnd", "display", "advanced", "apps"], ["accounts", "backup"],
+                  ["language", "battery", "storage", "date", "manual", "developer", "about"]];
+SETTINGS.forEach((group, g) => {
+  if (g) $("settings").querySelector(".list").append(el("div", "band"));
+  for (const key of group) {
+    const row = el("div", "setting");
+    row.id = `set-${key}`;
+    const icon = el("img");
+    icon.src = `icon-${key}.png`;
+    row.append(icon, el("span", "", TEXT[key]));
+    $("settings").querySelector(".list").append(row);
+  }
+});
+
+function page(id, title, rows) {
+  const bar = $(id).querySelector(".bar");
+  const back = el("div", "back");
+  back.id = `${id}-back`;
+  back.innerHTML = '<svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M24 14H5M13 5l-9 9 9 9"/></svg>';
+  bar.append(back, el("div", "title", title));
+  for (const [key, sub, extra] of rows) {
+    if (key === "|") { $(id).querySelector(".list").append(el("div", "band")); continue; }
+    if (extra === "head") { $(id).querySelector(".list").append(el("div", "head", TEXT[key])); continue; }
+    const row = el("div", `row ${extra === "master" ? "master" : ""} ${extra ? "switched" : ""}`, TEXT[key]);
+    row.id = `${id}-${key}`;
+    if (sub) row.append(el("div", `sub ${extra === "value" ? "value" : ""}`, TEXT[sub] || sub));
+    if (extra && extra !== "value") {
+      const toggle = el("div", `switch ${extra === "master" ? "on" : ""}`);
+      toggle.id = `${id}-${key}-switch`;
+      row.append(toggle);
+    }
+    $(id).querySelector(".list").append(row);
+  }
+}
+page("about", TEXT.about, [["status", "statusSub"], ["legal"], ["deviceName", "Galaxy Folder", "value"], ["model", "SM-G1600"],
+  ["software", "softwareSub"], ["hardware", "REV02.CHC"], ["batteryInfo", "batteryInfoSub"]]);
+page("software", TEXT.software, [["android", "6.0.1"], ["baseband", "G1600ZCU1ARF2"],
+  ["kernel", "3.18.24-13793217\ndpi@SWDG9820 #1\nThu Jun 14 15:37:09 KST 2018"], ["build", "MMB29M.G1600ZCU1ARF2"],
+  ["se", "Enforcing\nSEPF_SECMOBILE_6.0.1_0035\nThu Jun 14 15:45:15 2018"], ["knox", "Knox 2.6\nStandard SDK 5.6.0"]]);
+page("developer", TEXT.developer, [["on", "", "master"], ["bug"], ["backupPw", "backupPwSub"], ["awake", "awakeSub", "switch"],
+  ["hci", "hciSub", "switch"], ["services", "servicesSub"], ["debugging", "", "head"], ["usb", "usbSub", "switch"], ["revoke"], ["debugApp", "debugAppSub"]]);
+for (const node of document.querySelectorAll("[data-t]")) node.textContent = TEXT[node.dataset.t];
+$("clock").textContent = TEXT.clock;
+
+// --- the timeline ---
+const changes = [], scrolls = [], taps = [];
+let T = 0;
+const wait = (ms) => { T += ms; };
+const at = (change) => changes.push({ t: T, change });
+function tap(id, change) {      // a finger lands on an element, then something happens
+  taps.push({ t: T, id });
+  T += 200;
+  at(change);
+}
+const scrolled = { settings: 0, about: 0, developer: 0 };
+function scroll(screen, to, ms) {            // never past the end of the list
+  $(screen).style.display = "block";
+  to = Math.min(to, $(screen).querySelector(".list").offsetHeight - 680);
+  $(screen).style.display = "";
+  scrolls.push({ t: T, screen, from: scrolled[screen], to, ms });
+  scrolled[screen] = to;
+  T += ms;
+}
+const open = (screen) => (s, t) => { s.screen = screen; s.openedAt = t; };
+const toast = (text) => (s, t) => { s.toast = text; s.toastAt = t; };
+
+$("set-developer").style.display = "none";
+wait(1300);
+scroll("settings", 9999, 1700);                       // down to the end of Settings (no Developer options yet)
+wait(600);
+tap("set-about", open("about"));
+wait(1000);
+scroll("about", 9999, 900);
+wait(600);
+tap("about-software", open("software"));
+wait(1200);
+for (let n = 1; n <= 7; n++) {                       // Build number, seven times
+  tap("software-build", n === 7 ? (s, t) => { s.dev = true; toast(TEXT.enabled)(s, t); } : n >= 3 ? toast(TEXT.steps(7 - n)) : () => {});
+  wait(n === 7 ? 1900 : 230);
+}
+at((s) => { s.toast = null; });
+tap("software-back", open("about"));
+wait(700);
+tap("about-back", open("settings"));
+$("set-developer").style.display = "flex";
+scroll("settings", 9999, 1);                         // one more row now: Developer options
+wait(1100);
+tap("set-developer", open("developer"));
+wait(1300);
+scroll("developer", 130, 800);
+wait(600);
+tap("developer-usb-switch", (s) => { s.dialog = "confirm"; });
+wait(1700);
+tap("confirmOk", (s) => { s.dialog = null; s.usb = true; });
+wait(1900);
+at((s) => { s.dialog = "rsa"; });                    // the cable goes in: the computer asks to be trusted
+wait(1500);
+tap("always", (s) => { s.always = true; });
+wait(800);
+tap("rsaOk", (s) => { s.dialog = null; });
+wait(1600);
+const DURATION = T;
+
+const ease = (x) => (x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2);
+const clamp = (x) => Math.max(0, Math.min(1, x));
+
+function render(t) {
+  const s = { screen: "settings", openedAt: -1000, dev: false, toast: null, dialog: null, usb: false, always: false };
+  for (const { t: when, change } of changes) if (when <= t) change(s, when);
+
+  for (const screen of document.querySelectorAll(".screen")) {
+    const shown = screen.id === s.screen;
+    const entering = clamp((t - s.openedAt) / 200);
+    screen.style.display = shown ? "block" : "none";
+    screen.style.opacity = shown ? entering : 1;
+    screen.style.transform = shown ? `translateY(${(1 - entering) * 24}px)` : "";
+  }
+  const offset = { settings: 0, about: 0, developer: 0 };
+  for (const move of scrolls) if (move.t <= t) offset[move.screen] = move.from + (move.to - move.from) * ease(clamp((t - move.t) / move.ms));
+  for (const [screen, y] of Object.entries(offset)) $(screen).querySelector(".list").style.transform = `translateY(${-y}px)`;
+
+  $("set-developer").style.display = s.dev ? "flex" : "none";
+  $("developer-usb-switch").classList.toggle("on", s.usb);
+  $("always").classList.toggle("on", s.always);
+  $("toast").style.display = s.toast ? "block" : "none";
+  $("toast").style.opacity = clamp((t - s.toastAt) / 150);
+  $("toast").firstChild.textContent = s.toast || "";
+  $("dim").style.display = s.dialog ? "block" : "none";
+  $("confirm").style.display = s.dialog === "confirm" ? "block" : "none";
+  $("rsa").style.display = s.dialog === "rsa" ? "block" : "none";
+
+  for (const pressed of document.querySelectorAll(".pressed")) pressed.classList.remove("pressed");
+  const finger = taps.find((one) => t >= one.t && t < one.t + 330);
+  $("touch").style.display = finger ? "block" : "none";
+  if (finger) {
+    const target = $(finger.id), frame = $("phone").getBoundingClientRect(), box = target.getBoundingClientRect();
+    const scale = frame.width / 480;
+    $("touch").style.left = `${(box.left + box.width / 2 - frame.left) / scale}px`;
+    $("touch").style.top = `${(box.top + box.height / 2 - frame.top) / scale}px`;
+    $("touch").style.opacity = 1 - clamp((t - finger.t - 200) / 130);
+    if (target.matches(".setting, .row") && t < finger.t + 200) target.classList.add("pressed");
+  }
+}
+
+function fit() {
+  $("stage").style.transform = `translate(-50%, -50%) scale(${Math.min(innerWidth / 1080, innerHeight / 1920)})`;
+}
+addEventListener("resize", fit);
+fit();
+
+let live = true, began = performance.now();
+function seek(ms) { live = false; render(ms); }      // called by render.py
+function play(now) { if (live) { render(Math.min(now - began, DURATION)); requestAnimationFrame(play); } }
+requestAnimationFrame(play);
+addEventListener("keydown", (event) => { if (event.key.toLowerCase() === "r") began = performance.now(); });
+</script>
+</body>
+</html>
